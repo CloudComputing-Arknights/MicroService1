@@ -6,8 +6,6 @@ from pydantic import BaseModel, Field, EmailStr, StringConstraints
 from fastapi import HTTPException, Query
 from .address import AddressBase
 
-# Columbia UNI: 2–3 lowercase letters + 1–4 digits (e.g., abc1234)
-
 class UserBase(BaseModel):
     username: str = Field(
         ...,
