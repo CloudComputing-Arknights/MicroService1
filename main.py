@@ -13,7 +13,6 @@ from typing import Optional
 
 from models.user import UserCreate, UserRead, UserUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
-from models.health import Health
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
