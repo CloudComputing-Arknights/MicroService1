@@ -1,9 +1,9 @@
 from __future__ import annotations
-from typing import Optional, List, Annotated
+from typing import Optional, List
 from uuid import UUID, uuid4
 from datetime import date, datetime
-from pydantic import BaseModel, Field, EmailStr, StringConstraints
-from fastapi import HTTPException, Query
+from pydantic import BaseModel, Field, EmailStr
+
 from .address import AddressBase
 
 class UserBase(BaseModel):
