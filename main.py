@@ -47,12 +47,12 @@ def create_address(address: AddressCreate):
     return addr_read
 @app.get("/addresses", response_model=List[AddressRead])
 def list_addresses(
+    response: Response,
     street: Optional[str] = Query(None, description="Filter by street"),
     city: Optional[str] = Query(None, description="Filter by city"),
     state: Optional[str] = Query(None, description="Filter by state/region"),
     postal_code: Optional[str] = Query(None, description="Filter by postal code"),
     country: Optional[str] = Query(None, description="Filter by country"),
-    response: Response,
 ):
     filters = {
         "street": street,
@@ -160,12 +160,12 @@ def create_user(user: UserCreate):
 
 @app.get("/users", response_model=List[UserRead])
 def list_users(
+    response: Response,
     username: Optional[str] = Query(None, description="Filter by username"),
     email: Optional[str] = Query(None, description="Filter by email"),
     phone: Optional[str] = Query(None, description="Filter by phone number"),
     city: Optional[str] = Query(None, description="Filter by city of at least one address"),
     country: Optional[str] = Query(None, description="Filter by country of at least one address"),
-    response: Response,
 ):
     filters = {
         "username": username,
