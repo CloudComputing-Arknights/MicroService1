@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Response, Query
 from models.user import UserCreate, UserRead, UserUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
+from db import ping
 from utils.cache import (
     user_cache, address_cache, user_list_cache, address_list_cache,
     filters_key, invalidate_user, invalidate_address
@@ -231,6 +232,10 @@ def delete_user(user_id: UUID):
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
+@app.get("/db/health")
+def db_health():
+    return {"ok": ping()}
+
 @app.get("/")
 def root():
     return {"message": "Welcome to the User/Address API. See /docs for OpenAPI UI."}
