@@ -1,7 +1,7 @@
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from google.cloud.sql.connector import Connector, IPTypes
-import pymysql  # required by the connector/SQLAlchemy combo
 
 INSTANCE_CONN_NAME = os.getenv("INSTANCE_CONNECTION_NAME")  # "project:region:instance"
 DB_NAME = os.getenv("DB_NAME", "users_db")
@@ -9,25 +9,29 @@ DB_USER = os.getenv("DB_USER", "users_svc")
 DB_PASS = os.getenv("DB_PASS")  # injected via Secret Manager / env var
 USE_PRIVATE_IP = os.getenv("USE_PRIVATE_IP", "0") == "1"
 
-connector = Connector()
+_connector = Connector()
 
-def getconn():
-    return connector.connect(
+async def _getconn():
+    return await _connector.connect_async(
         INSTANCE_CONN_NAME,
-        "pymysql",
+        driver="pymysql",
         user=DB_USER,
         password=DB_PASS,
         db=DB_NAME,
         ip_type=IPTypes.PRIVATE if USE_PRIVATE_IP else IPTypes.PUBLIC,
     )
 
-engine = create_engine(
+engine: AsyncEngine = create_async_engine(
     "mysql+pymysql://",
-    creator=getconn,
+    async_creator=_getconn,
     pool_pre_ping=True,
     pool_recycle=1800,
 )
 
-def ping():
-    with engine.connect() as conn:
-        return bool(conn.execute(text("SELECT 1")).scalar())
+async def ping() -> bool:
+    async with engine.connect() as conn:
+        val = await conn.scalar(text("SELECT 1"))
+        return bool(val)
+
+def close_connector():
+    _connector.close()
