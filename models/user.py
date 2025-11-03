@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Optional, List
 from uuid import UUID, uuid4
 from datetime import date, datetime, timezone
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, AnyUrl
 
 from .address import AddressBase
 
@@ -27,7 +27,11 @@ class UserBase(BaseModel):
         description="Date of birth (YYYY-MM-DD).",
         json_schema_extra={"example": "2000-09-01"},
     )
-
+    avatar_url: Optional[AnyUrl] = Field(
+        None,
+        description="URL to avatar image.",
+        json_schema_extra={"example": "https://cdn.neighborhood.com/avatars/alice.png"},
+    )
     # Embed addresses (each with persistent Address ID)
     addresses: List[AddressBase] = Field(
         default_factory=list,
@@ -85,6 +89,11 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = Field(None, json_schema_extra={"example": "alice@newmail.com"})
     phone: Optional[str] = Field(None, json_schema_extra={"example": "+44 20 7946 0958"})
     birth_date: Optional[date] = Field(None, json_schema_extra={"example": "2000-09-01"})
+    avatar_url: Optional[AnyUrl] = Field(
+        None,
+        description="URL to avatar image.",
+        json_schema_extra={"example": "https://cdn.neighborhood.com/avatars/alice.png"}
+    )
     addresses: Optional[List[AddressBase]] = Field(
         None,
         description="Replace the entire set of addresses with this list.",
