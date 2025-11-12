@@ -18,6 +18,8 @@ def verify_password(plain: str, hashed: str) -> bool:
 ALGO = "HS256"
 JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "60"))
 JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_DEV_ONLY")  # put real secret in Secret Manager for prod
+if os.getenv("ENV") == "prod" and JWT_SECRET == "CHANGE_ME_DEV_ONLY":
+    raise RuntimeError("JWT_SECRET must be set in production")
 
 def create_access_token(sub: str, minutes: Optional[int] = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes or JWT_EXPIRES_MIN)
