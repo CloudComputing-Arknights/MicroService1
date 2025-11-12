@@ -7,11 +7,6 @@ from pydantic import BaseModel, Field
 
 
 class AddressBase(BaseModel):
-    id: UUID = Field(
-        default_factory=uuid4,
-        description="Persistent Address ID (server-generated).",
-        json_schema_extra={"example": "550e8400-e29b-41d4-a716-446655440000"},
-    )
     street: str = Field(
         ...,
         description="Street address and number.",
@@ -42,7 +37,6 @@ class AddressBase(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "id": "550e8400-e29b-41d4-a716-446655440000",
                     "street": "123 Main St",
                     "city": "New York",
                     "state": "NY",
@@ -60,7 +54,6 @@ class AddressCreate(AddressBase):
         "json_schema_extra": {
             "examples": [
                 {
-                    "id": "11111111-1111-4111-8111-111111111111",
                     "street": "221B Baker St",
                     "city": "London",
                     "state": None,
@@ -107,6 +100,11 @@ class AddressUpdate(BaseModel):
 
 
 class AddressRead(AddressBase):
+    id: UUID = Field(
+        default_factory=uuid4,
+        description="Persistent Address ID (server-generated).",
+        json_schema_extra={"example": "550e8400-e29b-41d4-a716-446655440000"},
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Creation timestamp (UTC).",

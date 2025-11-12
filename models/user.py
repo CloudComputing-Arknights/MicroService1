@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from datetime import date, datetime, timezone
 from pydantic import BaseModel, Field, EmailStr, AnyUrl
@@ -32,23 +32,6 @@ class UserBase(BaseModel):
         description="URL to avatar image.",
         json_schema_extra={"example": "https://cdn.neighborhood.com/avatars/alice.png"},
     )
-    # Embed addresses (each with persistent Address ID)
-    addresses: List[AddressBase] = Field(
-        default_factory=list,
-        description="Addresses linked to this user (each has a persistent Address ID).",
-        json_schema_extra={
-            "example": [
-                {
-                    "id": "550e8400-e29b-41d4-a716-446655440000",
-                    "street": "123 Main St",
-                    "city": "New York",
-                    "state": "NY",
-                    "postal_code": "10001",
-                    "country": "USA",
-                }
-            ]
-        },
-    )
 
     model_config = {
         "json_schema_extra": {
@@ -58,16 +41,6 @@ class UserBase(BaseModel):
                     "email": "alice@example.com",
                     "phone": "+1-212-555-0199",
                     "birth_date": "2000-09-01",
-                    "addresses": [
-                        {
-                            "id": "550e8400-e29b-41d4-a716-446655440000",
-                            "street": "123 Main St",
-                            "city": "New York",
-                            "state": "NY",
-                            "postal_code": "10001",
-                            "country": "USA",
-                        }
-                    ],
                 }
             ]
         }
@@ -94,40 +67,12 @@ class UserUpdate(BaseModel):
         description="URL to avatar image.",
         json_schema_extra={"example": "https://cdn.neighborhood.com/avatars/alice.png"}
     )
-    addresses: Optional[List[AddressBase]] = Field(
-        None,
-        description="Replace the entire set of addresses with this list.",
-        json_schema_extra={
-            "example": [
-                {
-                    "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                    "street": "10 Downing St",
-                    "city": "London",
-                    "state": None,
-                    "postal_code": "SW1A 2AA",
-                    "country": "UK",
-                }
-            ]
-        },
-    )
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {"username": "alice_new"},
                 {"email": "alice@newmail.com"},
-                {
-                    "addresses": [
-                        {
-                            "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                            "street": "10 Downing St",
-                            "city": "London",
-                            "state": None,
-                            "postal_code": "SW1A 2AA",
-                            "country": "UK",
-                        }
-                    ]
-                },
             ]
         }
     }
@@ -160,16 +105,6 @@ class UserRead(UserBase):
                     "email": "alice@example.com",
                     "phone": "+1-212-555-0199",
                     "birth_date": "2000-09-01",
-                    "addresses": [
-                        {
-                            "id": "550e8400-e29b-41d4-a716-446655440000",
-                            "street": "123 Main St",
-                            "city": "New York",
-                            "state": "NY",
-                            "postal_code": "10001",
-                            "country": "USA",
-                        }
-                    ],
                     "created_at": "2025-01-15T10:20:30Z",
                     "updated_at": "2025-01-16T12:00:00Z",
                 }
