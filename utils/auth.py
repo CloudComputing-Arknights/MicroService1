@@ -4,15 +4,16 @@ from typing import Optional
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from passlib.hash import bcrypt_sha256
 
 # hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return bcrypt_sha256.hash(plain)
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt_sha256.verify(plain, hashed)
 
 # JWT
 ALGO = "HS256"
