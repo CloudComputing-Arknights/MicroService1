@@ -50,7 +50,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Creation payload for a User."""
     password: str = Field(
-        ..., min_length=8, max_length=72,
+        ..., min_length=8, max_length=256,
         description="Plaintext password (will be hashed server-side).",
         json_schema_extra={"example": "Str0ngP@ss!"}
     )
