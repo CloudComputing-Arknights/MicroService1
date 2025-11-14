@@ -1,10 +1,9 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from uuid import UUID, uuid4
 from datetime import date, datetime, timezone
 from pydantic import BaseModel, Field, EmailStr, AnyUrl
 
-from .address import AddressBase
 
 class UserBase(BaseModel):
     username: str = Field(
@@ -105,9 +104,35 @@ class UserRead(UserBase):
                     "email": "alice@example.com",
                     "phone": "+1-212-555-0199",
                     "birth_date": "2000-09-01",
+                    "avatar_url": "https://cdn.neighborhood.com/avatars/alice.png",
                     "created_at": "2025-01-15T10:20:30Z",
                     "updated_at": "2025-01-16T12:00:00Z",
                 }
             ]
         }
     }
+
+class UserInDB(UserBase):
+    id: UUID
+    password_hash: str
+    is_admin: bool = False
+    created_at: datetime
+    updated_at: datetime | None = None
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+class UserPublic(BaseModel):
+    id: UUID
+    username: str
+
+class UserPrivate(UserPublic):
+    email: EmailStr
+    phone: Optional[str] = None
+    birth_date: Optional[date] = None
+
+class UserAdminView(UserPrivate):
+    is_admin: bool
+    created_at: datetime
+    updated_at: datetime | None = None

@@ -22,10 +22,21 @@ JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_DEV_ONLY")  # put real secret in
 if os.getenv("ENV") == "prod" and JWT_SECRET == "CHANGE_ME_DEV_ONLY":
     raise RuntimeError("JWT_SECRET must be set in production")
 
-def create_access_token(sub: str, minutes: Optional[int] = None) -> str:
+def create_access_token(
+    user_id: str,
+    username: str,
+    is_admin: bool,
+    minutes: Optional[int] = None,
+) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes or JWT_EXPIRES_MIN)
-    payload = {"sub": sub, "exp": expire}
+    payload = {
+        "sub": user_id,
+        "username": username,
+        "role": "admin" if is_admin else "user",
+        "exp": expire,
+    }
     return jwt.encode(payload, JWT_SECRET, algorithm=ALGO)
 
 def decode_access_token(token: str) -> dict:
     return jwt.decode(token, JWT_SECRET, algorithms=[ALGO])
+
