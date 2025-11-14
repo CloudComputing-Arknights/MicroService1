@@ -3,10 +3,10 @@ import os
 import json, hashlib
 from typing import Optional, Any
 from uuid import UUID
-from fastapi import FastAPI, HTTPException, Response, Query, Depends, status
+from fastapi import FastAPI, HTTPException, Response, Query, Depends
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.concurrency import run_in_threadpool
-from models.user import UserCreate, UserRead, UserUpdate
+from models.user import UserCreate, UserRead, UserUpdate, UserInDB, UserPublic, UserPrivate, UserAdminView
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from utils.cache import (
     user_cache, address_cache, user_list_cache, address_list_cache,
@@ -20,9 +20,10 @@ from services.user_repo import (
     list_users as repo_list_users,
     update_user as repo_update_user,
     delete_user as repo_delete_user,
-    get_user_by_username as repo_get_user_by_username,
+    get_user_with_auth_by_username as repo_get_user_with_auth_by_username,
     upsert_password_hash,
-    get_password_hash_by_user_id,
+    get_user_with_auth_by_id as repo_get_user_with_auth_by_id,
+    list_users_with_auth as repo_list_users_with_auth,
 )
 from services.address_repo import (
     create_address as repo_create_address,
@@ -32,6 +33,7 @@ from services.address_repo import (
     delete_address as repo_delete_address,
 )
 from sqlalchemy.exc import IntegrityError
+from jose import JWTError
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -229,6 +231,69 @@ async def get_user(user_id: UUID, response: Response):
     set_cache_headers(response, ttl=user_cache.ttl, etag=etag_for(out.model_dump()))
     return out
 
+@app.get("/users/{user_id}/public", response_model=UserPublic)
+async def get_user_public(user_id: UUID, response: Response):
+    sid = str(user_id)
+    if sid in user_cache:
+        u = user_cache[sid]
+    else:
+        u = await repo_get_user(sid)
+        if not u:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_cache[sid] = u
+
+    public = UserPublic(id=u.id, username=u.username)
+    set_cache_headers(response, ttl=user_cache.ttl, etag=etag_for(public.model_dump()))
+    return public
+
+@app.get("/users/{user_id}/private", response_model=UserPrivate)
+async def get_user_private(
+    user_id: UUID,
+    response: Response,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+):
+    # Authorization: owner or admin
+    if principal.id != user_id and principal.role != "admin":
+        raise HTTPException(status_code=403, detail="Not permitted to view this user")
+
+    sid = str(user_id)
+    u = await repo_get_user(sid)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    private = UserPrivate(
+        id=u.id,
+        username=u.username,
+        email=u.email,
+        phone=u.phone,
+        birth_date=u.birth_date,
+    )
+    set_cache_headers(response, ttl=user_cache.ttl, etag=etag_for(private.model_dump()))
+    return private
+
+@app.get("/admin/users/{user_id}", response_model=UserAdminView)
+async def get_user_admin(
+    user_id: UUID,
+    response: Response,
+    principal: CurrentPrincipal = Depends(get_current_admin),
+):
+    sid = str(user_id)
+    u = await repo_get_user_with_auth_by_id(sid)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    admin_view = UserAdminView(
+        id=u.id,
+        username=u.username,
+        email=u.email,
+        phone=u.phone,
+        birth_date=u.birth_date,
+        is_admin=u.is_admin,
+        created_at=u.created_at,
+        updated_at=u.updated_at,
+    )
+    set_cache_headers(response, ttl=user_cache.ttl, etag=etag_for(admin_view.model_dump()))
+    return admin_view
 @app.put("/users/{user_id}", response_model=UserRead)
 async def update_user(user_id: UUID, update: UserUpdate):
     try:
@@ -258,20 +323,48 @@ class Token(BaseModel):
 
 @app.post("/auth/token", response_model=Token)
 async def login(form: OAuth2PasswordRequestForm = Depends()):
-    username = form.username
-    user = await repo_get_user_by_username(username)
+    user: UserInDB | None = await repo_get_user_with_auth_by_username(form.username)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    hashed = await get_password_hash_by_user_id(str(user.id))
-    ok = hashed and await run_in_threadpool(verify_password, form.password, hashed)
+    ok = await run_in_threadpool(verify_password, form.password, user.password_hash)
     if not ok:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    token = create_access_token(str(user.id))
-    return Token(access_token=token)
+    access_token = create_access_token(
+        user_id=str(user.id),
+        username=user.username,
+        is_admin=user.is_admin,
+    )
+
+    return Token(access_token=access_token, token_type="bearer")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+class CurrentPrincipal(BaseModel):
+    id: UUID
+    username: str
+    role: str  # "user" or "admin"
+
+
+async def get_current_principal(token: str = Depends(oauth2_scheme)) -> CurrentPrincipal:
+    try:
+        payload = decode_access_token(token)
+        sub = payload.get("sub")
+        username = payload.get("username")
+        role = payload.get("role", "user")
+
+        if not sub or not username:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        return CurrentPrincipal(id=UUID(sub), username=username, role=role)
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+async def get_current_admin(principal: CurrentPrincipal = Depends(get_current_principal)) -> CurrentPrincipal:
+    if principal.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return principal
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRead:
     try:
@@ -305,3 +398,25 @@ def root():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+
+@app.get("/admin/users", response_model=list[UserAdminView])
+async def list_users_admin(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    principal: CurrentPrincipal = Depends(get_current_admin),
+):
+    users = await repo_list_users_with_auth(limit, offset)
+
+    return [
+        UserAdminView(
+            id=u.id,
+            username=u.username,
+            email=u.email,
+            phone=u.phone,
+            birth_date=u.birth_date,
+            is_admin=u.is_admin,
+            created_at=u.created_at,
+            updated_at=u.updated_at,
+        )
+        for u in users
+    ]

@@ -4,7 +4,7 @@ from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from db import engine
-from models.user import UserCreate, UserRead, UserUpdate
+from models.user import UserCreate, UserRead, UserUpdate, UserInDB
 
 # ---- CRUD ----
 
@@ -90,21 +90,23 @@ async def delete_user(user_id: str) -> bool:
 
 # ---- Credentials ----
 
-async def upsert_password_hash(user_id: str, password_hash: str) -> None:
+async def upsert_password_hash(
+    user_id: str,
+    password_hash: str,
+    is_admin: bool = False,
+) -> None:
     sql = text("""
-        INSERT INTO users_credentials(user_id, password_hash)
-        VALUES (:id, :h)
-        ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash)
+        INSERT INTO users_credentials(user_id, password_hash, is_admin)
+        VALUES (:id, :h, :admin)
+        ON DUPLICATE KEY UPDATE
+          password_hash = VALUES(password_hash),
+          is_admin      = VALUES(is_admin)
     """)
     async with engine.begin() as conn:
-        await conn.execute(sql, {"id": user_id, "h": password_hash})
-
-async def get_password_hash_by_user_id(user_id: str) -> Optional[str]:
-    async with engine.connect() as conn:
-        res = await conn.execute(text("SELECT password_hash FROM users_credentials WHERE user_id=:id"),
-                                 {"id": user_id})
-        row = res.mappings().first()
-    return row["password_hash"] if row else None
+        await conn.execute(
+            sql,
+            {"id": user_id, "h": password_hash, "admin": 1 if is_admin else 0},
+        )
 
 # ---- helpers ----
 
@@ -124,3 +126,115 @@ def _to_user_read(row) -> UserRead:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+async def get_user_with_auth_by_username(username: str) -> Optional[UserInDB]:
+    async with engine.connect() as conn:
+        res = await conn.execute(
+            text("""
+            SELECT
+              u.id,
+              u.username,
+              u.email,
+              u.phone,
+              u.birth_date,
+              u.avatar_url,
+              u.created_at,
+              u.updated_at,
+              c.password_hash,
+              c.is_admin
+            FROM users u
+            JOIN users_credentials c ON c.user_id = u.id
+            WHERE u.username = :u
+            """),
+            {"u": username},
+        )
+        row = res.mappings().first()
+    if not row:
+        return None
+    return UserInDB(
+        id=row["id"],
+        username=row["username"],
+        email=row["email"],
+        phone=row["phone"],
+        birth_date=row["birth_date"],
+        avatar_url=row["avatar_url"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        password_hash=row["password_hash"],
+        is_admin=bool(row["is_admin"]),
+    )
+
+async def get_user_with_auth_by_id(user_id: str) -> Optional[UserInDB]:
+    async with engine.connect() as conn:
+        res = await conn.execute(
+            text("""
+            SELECT
+              u.id,
+              u.username,
+              u.email,
+              u.phone,
+              u.birth_date,
+              u.avatar_url,
+              u.created_at,
+              u.updated_at,
+              c.password_hash,
+              c.is_admin
+            FROM users u
+            JOIN users_credentials c ON c.user_id = u.id
+            WHERE u.id = :id
+            """),
+            {"id": user_id},
+        )
+        row = res.mappings().first()
+    if not row:
+        return None
+    return UserInDB(
+        id=row["id"],
+        username=row["username"],
+        email=row["email"],
+        phone=row["phone"],
+        birth_date=row["birth_date"],
+        avatar_url=row["avatar_url"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        password_hash=row["password_hash"],
+        is_admin=bool(row["is_admin"]),
+    )
+
+async def list_users_with_auth(limit: int, offset: int) -> List[UserInDB]:
+    sql = text("""
+        SELECT
+          u.id,
+          u.username,
+          u.email,
+          u.phone,
+          u.birth_date,
+          u.avatar_url,
+          u.created_at,
+          u.updated_at,
+          c.password_hash,
+          c.is_admin
+        FROM users u
+        JOIN users_credentials c ON c.user_id = u.id
+        ORDER BY u.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    async with engine.connect() as conn:
+        res = await conn.execute(sql, {"limit": limit, "offset": offset})
+        rows = res.mappings().all()
+
+    return [
+        UserInDB(
+            id=row["id"],
+            username=row["username"],
+            email=row["email"],
+            phone=row["phone"],
+            birth_date=row["birth_date"],
+            avatar_url=row["avatar_url"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            password_hash=row["password_hash"],
+            is_admin=bool(row["is_admin"]),
+        )
+        for row in rows
+    ]
