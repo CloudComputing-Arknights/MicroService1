@@ -1,85 +1,160 @@
-# Sprint1_MicroService1
+# User & Address Microservice (FastAPI + Cloud SQL)
 
-Lightweight FastAPI microservice providing simple User and Address models and endpoints. This repository is a demo project used for Cloud Computing exercises (Sprint 1).
+This repository provides the atomic User/Address microservice for a Neighborhood Exchange project for COMS4153.
+It exposes a standalone API responsible solely for user profiles, address records, and authentication, and is designed to be consumed by higher-level composite services.
 
-## What this project contains
+The microservice follows a clean API-first approach using FastAPI, Pydantic v2 models, JWT-based authentication, and a MySQL Cloud SQL backend deployed on Cloud Run.
 
-- `main.py` - FastAPI application and HTTP endpoints (health, users, addresses).
-- `models/` - Pydantic v2 models for `User`, `Address`, and `Health` responses.
-- `requirements.txt` - Python dependencies required to run the app.
+## Key Features
 
+### 1. Users
 
+- Create, read, update, delete (CRUD)
+- Public / Private / Admin views
+- Password hashing & secure storage
+- JWT-based authentication & role management
+- Pagination, filtering, and query caching
+- HAL-style _links in responses
 
-## Quickstart (run locally)
+### 2. Addresses
 
-1. Create and activate a Python virtual environment (recommended).
+- Atomic CRUD for address records
+- Filtering & pagination
+- Response caching with ETag-based validation
+- Clean separation from User model (no foreign keys in atomic MS)
 
-PowerShell example:
+### 3. Authentication
 
-```powershell
-python -m venv .venv;
-. .\.venv\Scripts\Activate.ps1
-```
+- OAuth2 Password Grant via /auth/token
+- Access tokens with expiry, role, and subject fields
+- Secure password hashing via bcrypt_sha256
 
-2. Install dependencies:
+### 4. Caching
+
+- Uses cachetools.TTLCache:
+- Object cache for User/Address by ID
+- List cache for filtered queries
+- Automatic invalidation on update/delete
+
+### 5. Database Integration
+
+- Async MySQL via aiomysql + SQLAlchemy
+- Cloud SQL connection through Unix domain socket
+- Environment-based configuration
+
+## Local Development
+
+### 1. Install dependencies
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-3. Start the app with Uvicorn:
+### 2. Set environment variables
 
 ```powershell
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+DB_PASS=your-db-password
+INSTANCE_CONNECTION_NAME=project:region:instance
+DB_NAME=users_db
+DB_USER=users_svc
+JWT_SECRET=your-local-secret
 ```
 
-4. Open the interactive OpenAPI docs in your browser:
+### 3. Run locally
+   
+```powershell
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-    http://127.0.0.1:8000/docs
+### 4. Visit API docs
 
+```powershell
+http://localhost:8000/docs
+```
 
+## Deployment (Cloud Run)
+This service is designed specifically for Cloud Run.
+```
+gcloud builds submit --tag gcr.io/<PROJECT_ID>/user-address-ms
+gcloud run deploy user-address-ms \
+  --image gcr.io/<PROJECT_ID>/user-address-ms \
+  --platform managed \
+  --region <REGION> \
+  --add-cloudsql-instances $INSTANCE_CONNECTION_NAME \
+  --set-env-vars INSTANCE_CONNECTION_NAME=$INSTANCE_CONNECTION_NAME \
+  --set-secrets DB_PASS=db-pass:latest \
+  --set-env-vars JWT_SECRET="(your secret or Secret Manager)"
+```
 
 ## API overview
 
-Main endpoints (status codes shown are typical):
+### Authentication
 
-- `GET /` — Root message (200)
-- `GET /health` — Health check (200). Optional query param `echo`.
-- `GET /health/{path_echo}` — Health check with path echo (200).
+| Method | Path | Description |
+|--------|------|-------------|
+| POST   | `/auth/token` | Obtain access token |
+| GET    | `/auth/me` | Retrieve current user |
+| GET    | `/admin/users` | Admin-only listing |
 
-Address endpoints (NOT fully implemented in the starter code):
+### Users
 
-- `POST /addresses` — Create an address (201)
-- `GET /addresses` — List addresses (200)
-- `GET /addresses/{address_id}` — Get a single address (200)
-- `PUT /addresses/{address_id}` — Update an address (200)
-- `DELETE /addresses/{address_id}` — Delete an address (204)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST   | `/users` | Create user |
+| GET    | `/users?filters...` | List users (paginated + filtered) |
+| GET    | `/users/{id}` | Read full user |
+| GET    | `/users/{id}/public` | Public view |
+| GET    | `/users/{id}/private` | Owner/Admin view |
+| GET    | `/admin/users/{id}` | Admin view |
+| PUT    | `/users/{id}` | Update |
+| DELETE | `/users/{id}` | Delete |
 
-User endpoints (NOT fully implemented in the starter code):
+### Addresses
 
-- `POST /users` — Create user (201)
-- `GET /users` — List users (200)
-- `GET /users/{user_id}` — Get a user (200)
-- `PUT /users/{user_id}` — Update user (200)
-- `DELETE /users/{user_id}` — Delete user (204)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST   | `/addresses` | Create address |
+| GET    | `/addresses?filters...` | List addresses |
+| GET    | `/addresses/{id}` | Retrieve address |
+| PUT    | `/addresses/{id}` | Update |
+| DELETE | `/addresses/{id}` | Delete |
 
-Note: Many endpoint handlers currently raise `HTTPException(status_code=501, detail="NOT IMPLEMENTED")` as placeholders.
+## Testing
 
-## Models
+Use the built-in OpenAPI UI:
+```powershell
+/docs
+```
 
-Key Pydantic models are in the `models/` package:
+Or test via cURL:
+```powershell
+curl -X POST http://localhost:8000/auth/token \
+  -d "username=alice&password=Str0ngP@ss!"
+```
 
-- `models.user` — `UserCreate`, `UserRead`, `UserUpdate`, and base user schemas. Users embed addresses.
-- `models.address` — `AddressCreate`, `AddressRead`, `AddressUpdate`, and base address schemas.
-- `models.health` — `Health` model returned by health endpoints.
+## Authentication Model
+JWT payload:
+```powershell
+{
+  "sub": "USER_ID",
+  "username": "alice",
+  "role": "user",
+  "exp": "timestamp"
+}
+```
+Roles:
+*   `user`
+*   `admin`
+## Design Notes
+### Atomic service principles implemented
+- No cross-service joins
+- No user↔address relational coupling
+- All relations handled by composite layer
+- Pure CRUD with stable, predictable contracts
 
-Open the Python files under `models/` to see full field definitions and example JSON in the Pydantic `model_config`.
-
-## Development notes
-
-- The application uses in-memory dictionaries (`users`, `addresses` in `main.py`) as a temporary datastore. Persistence is intentionally out of scope for this sprint.
-- To implement full functionality, replace the in-memory stores with a real database or persistent layer.
-
+### Why no `user_id` in Address?
+Because higher-level composite microservices (e.g., Trade or Exchange services) build their own cross-entity relations.
+This keeps atomic microservices clean, isolated, and scalable.
 
 ## Requirements
 
