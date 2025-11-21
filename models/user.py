@@ -58,6 +58,10 @@ class UserCreate(UserBase):
         "json_schema_extra": {
             "examples": [
                 {
+                    "username": "alice",
+                    "email": "alice@example.com",
+                    "phone": "+1-212-555-0199",
+                    "birth_date": "2000-09-01",
                     "password": "Str0ngP@ss!"
                 }
             ]
