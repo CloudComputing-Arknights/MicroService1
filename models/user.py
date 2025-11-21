@@ -54,6 +54,16 @@ class UserCreate(UserBase):
         json_schema_extra={"example": "Str0ngP@ss!"}
     )
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "password": "Str0ngP@ss!"
+                }
+            ]
+        }
+    }
+
 
 class UserUpdate(BaseModel):
     """Partial update for a User; supply only fields to change."""
