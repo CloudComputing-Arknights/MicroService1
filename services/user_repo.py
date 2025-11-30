@@ -238,3 +238,13 @@ async def list_users_with_auth(limit: int, offset: int) -> List[UserInDB]:
         )
         for row in rows
     ]
+
+async def get_user_by_email(email: str) -> Optional[UserRead]:
+    sql = text("SELECT * FROM users WHERE email = :email")
+    async with engine.connect() as conn:
+        res = await conn.execute(sql, {"email": email})
+        row = res.mappings().first()
+        if not row:
+            return None
+
+        return _to_user_read(row)
