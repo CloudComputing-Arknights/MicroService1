@@ -1,9 +1,12 @@
 from __future__ import annotations
 import os
 import json, hashlib
+import secrets
+import logging
+import uuid
 from typing import Optional, Any
 from uuid import UUID
-from fastapi import FastAPI, HTTPException, Response, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.concurrency import run_in_threadpool
 from models.user import UserCreate, UserRead, UserUpdate, UserInDB, UserPublic, UserPrivate, UserAdminView
@@ -12,7 +15,7 @@ from utils.cache import (
     user_cache, address_cache, user_list_cache, address_list_cache,
     filters_key, invalidate_user, invalidate_address
 )
-from utils.auth import hash_password, verify_password, create_access_token, decode_access_token
+from utils.auth import hash_password, verify_password, create_access_token, decode_access_token, verify_google_id_token
 from pydantic import BaseModel
 from services.user_repo import (
     create_user as repo_create_user,
@@ -24,6 +27,7 @@ from services.user_repo import (
     upsert_password_hash,
     get_user_with_auth_by_id as repo_get_user_with_auth_by_id,
     list_users_with_auth as repo_list_users_with_auth,
+    get_user_by_email as repo_get_user_by_email,
 )
 from services.address_repo import (
     create_address as repo_create_address,
@@ -34,8 +38,36 @@ from services.address_repo import (
 )
 from sqlalchemy.exc import IntegrityError
 from jose import JWTError
+from starlette.middleware.base import BaseHTTPMiddleware
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
+
+logger = logging.getLogger("user_address_service")
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+
+        corr_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+        request.state.correlation_id = corr_id
+
+        logger.info(
+            "Incoming request %s %s (correlation_id=%s)",
+            request.method,
+            request.url.path,
+            corr_id,
+        )
+
+        response: Response = await call_next(request)
+        response.headers["X-Correlation-ID"] = corr_id
+
+        logger.info(
+            "Outgoing response %s %s (status=%s, correlation_id=%s)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            corr_id,
+        )
+        return response
 
 def etag_for(obj) -> str:
     return hashlib.md5(json.dumps(obj, default=str, sort_keys=True).encode()).hexdigest()
@@ -56,7 +88,6 @@ def _address_links(a_id: UUID):
     }
 
 def _rel_url(path: str, q: dict[str, Any]) -> str:
-    # Build a relative URL like "/users?limit=50&offset=100&city=NY"
     parts = []
     for k, v in q.items():
         if v is None:
@@ -69,6 +100,8 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(CorrelationIdMiddleware)
+
 # -----------------------------------------------------------------------------
 # Login & admin
 # -----------------------------------------------------------------------------
@@ -76,6 +109,14 @@ app = FastAPI(
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class CurrentPrincipal(BaseModel):
+    id: UUID
+    username: str
+    role: str  # "user" or "admin"
+
+class GoogleLoginRequest(BaseModel):
+    id_token: str
 
 @app.post("/auth/token", response_model=Token)
 async def login(form: OAuth2PasswordRequestForm = Depends()):
@@ -94,13 +135,52 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
 
     return Token(access_token=access_token, token_type="bearer")
 
+@app.post("/auth/google", response_model=Token)
+async def google_login(payload: GoogleLoginRequest):
+    try:
+        info = await verify_google_id_token(payload.id_token)
+    except Exception as e:
+        logger.warning("Google token verification failed: %s", e)
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    email = info.email
+    base_username = email.split("@")[0]
+
+    user = await repo_get_user_by_email(email)
+
+    if not user:
+        tmp_password = secrets.token_urlsafe(32)
+        hashed = await run_in_threadpool(hash_password, tmp_password)
+
+        user_create = UserCreate(
+            username=base_username,
+            email=email,
+            password=tmp_password,
+        )
+
+        try:
+            user = await repo_create_user(user_create)
+            await upsert_password_hash(str(user.id), hashed)
+            logger.info(
+                "Created local user from Google login: email=%s, user_id=%s",
+                email,
+                user.id,
+            )
+        except IntegrityError:
+            logger.error("Integrity error while creating Google user for email=%s", email)
+            raise HTTPException(status_code=400, detail="Unable to create user from Google account")
+
+    access_token = create_access_token(
+        user_id=str(user.id),
+        username=user.username,
+        is_admin=getattr(user, "is_admin", False),
+    )
+
+    logger.info("Issued JWT for Google user: email=%s, user_id=%s", email, user.id)
+
+    return Token(access_token=access_token, token_type="bearer")
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
-
-class CurrentPrincipal(BaseModel):
-    id: UUID
-    username: str
-    role: str  # "user" or "admin"
-
 
 async def get_current_principal(token: str = Depends(oauth2_scheme)) -> CurrentPrincipal:
     try:
