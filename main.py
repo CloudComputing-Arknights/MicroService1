@@ -42,6 +42,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+)
 logger = logging.getLogger("user_address_service")
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
